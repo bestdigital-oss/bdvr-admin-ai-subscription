@@ -74,6 +74,13 @@
 
   .section-title { font-size: 13px; font-weight: 600; color: #444; margin: 16px 0 8px; }
 
+  /* 관리자 잠금 */
+  .lock-bar { background:#fff8e1; border-bottom:1px solid #ffe082; padding:8px 24px; display:flex; align-items:center; gap:10px; font-size:13px; }
+  .lock-bar input { padding:5px 10px; border:1px solid #ddd; border-radius:5px; font-size:13px; width:160px; }
+  .lock-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 12px; border-radius:12px; font-size:12px; font-weight:600; }
+  .lock-badge.locked { background:#fce8e6; color:#c62828; }
+  .lock-badge.unlocked { background:#e8f5e9; color:#2e7d32; }
+
   /* 수정 모달 */
   .modal-overlay { display:none; position:fixed; inset:0; background:rgba(0,0,0,0.45); z-index:1000; align-items:center; justify-content:center; }
   .modal-overlay.open { display:flex; }
@@ -189,9 +196,18 @@
   <select id="filter-service" onchange="renderTable()">
     <option value="">전체 서비스</option>
   </select>
-  <button class="btn btn-outline" onclick="renderTable()">초기화</button>
-  <button class="btn btn-success" onclick="document.getElementById('tab-upload').click()">+ 영수증 추가</button>
-  <button class="btn btn-primary" onclick="showTab('sheets')">📤 Google Sheets 업데이트</button>
+  <button class="btn btn-outline" onclick="resetFilters()">초기화</button>
+  <button class="btn btn-success" id="btn-add-receipt" style="display:none;" onclick="document.getElementById('tab-upload').click()">+ 영수증 추가</button>
+  <button class="btn btn-primary" id="btn-sheets" style="display:none;" onclick="showTab('sheets')">📤 Google Sheets 업데이트</button>
+</div>
+
+<!-- 관리자 잠금 바 -->
+<div class="lock-bar" id="lock-bar">
+  <span id="lock-badge" class="lock-badge locked">🔒 읽기 전용</span>
+  <span style="color:#888;font-size:12px;">관리자만 수정/삭제 가능합니다.</span>
+  <input type="password" id="admin-pw-input" placeholder="관리자 비밀번호" onkeydown="if(event.key==='Enter') tryUnlock()">
+  <button class="btn btn-warning" onclick="tryUnlock()" style="padding:5px 14px;font-size:12px;">잠금 해제</button>
+  <button class="btn btn-outline" id="btn-lock-again" style="display:none;padding:5px 14px;font-size:12px;" onclick="lockAdmin()">🔒 잠금</button>
 </div>
 
 <div class="summary-bar" id="summary-bar"></div>
@@ -511,6 +527,10 @@ function renderTable() {
     const periodEnd = r.period_end
       ? r.period_end
       : `<span style="color:#e65100;font-weight:600;">진행중</span>`;
+    const actionBtns = isAdmin
+      ? `<button class="btn-edit" onclick="openEdit(${realIdx})">✏️ 수정</button>
+         <button class="btn-del" onclick="requestDelete(${realIdx},'${r.service}')">🗑</button>`
+      : `<span style="font-size:11px;color:#bbb;">🔒</span>`;
     return `
     <tr class="${r.matched?'':'unmatched'}" data-idx="${realIdx}">
       <td>${i+1}</td>
@@ -527,10 +547,7 @@ function renderTable() {
       <td>${matchBadge(r.matched,r.invoice_no,r.receipt_no)}</td>
       <td style="font-size:11px;color:#666;">${r.account||''}</td>
       <td style="font-size:11px;color:#666;max-width:160px;">${r.note||''}</td>
-      <td style="white-space:nowrap;">
-        <button class="btn-edit" onclick="openEdit(${realIdx})">✏️ 수정</button>
-        <button class="btn-del" onclick="requestDelete(${realIdx},'${r.service}')">🗑</button>
-      </td>
+      <td style="white-space:nowrap;">${actionBtns}</td>
     </tr>`;
   }).join('');
   renderSummary();
@@ -883,6 +900,55 @@ function showToastMsg(msg, duration) {
     t.classList.remove('show');
     t.querySelectorAll('button').forEach(b => b.style.display = '');
   }, duration);
+}
+
+// ===== 관리자 잠금 =====
+const ADMIN_PW = 'bd040601!';
+let isAdmin = false;
+
+function tryUnlock() {
+  const pw = document.getElementById('admin-pw-input').value;
+  if (pw === ADMIN_PW) {
+    isAdmin = true;
+    document.getElementById('admin-pw-input').value = '';
+    document.getElementById('lock-badge').className = 'lock-badge unlocked';
+    document.getElementById('lock-badge').textContent = '🔓 관리자 모드';
+    document.getElementById('admin-pw-input').style.display = 'none';
+    document.querySelector('#lock-bar .btn-warning').style.display = 'none';
+    document.getElementById('btn-lock-again').style.display = '';
+    document.getElementById('btn-add-receipt').style.display = '';
+    document.getElementById('btn-sheets').style.display = '';
+    document.querySelector('#lock-bar span[style]').textContent = '수정·삭제·추가 기능이 활성화되었습니다.';
+    renderTable();
+  } else {
+    document.getElementById('admin-pw-input').style.border = '1.5px solid #ea4335';
+    document.getElementById('admin-pw-input').placeholder = '비밀번호가 틀렸습니다';
+    setTimeout(() => {
+      document.getElementById('admin-pw-input').style.border = '';
+      document.getElementById('admin-pw-input').placeholder = '관리자 비밀번호';
+    }, 1800);
+  }
+}
+
+function lockAdmin() {
+  isAdmin = false;
+  document.getElementById('lock-badge').className = 'lock-badge locked';
+  document.getElementById('lock-badge').textContent = '🔒 읽기 전용';
+  document.getElementById('admin-pw-input').style.display = '';
+  document.querySelector('#lock-bar .btn-warning').style.display = '';
+  document.getElementById('btn-lock-again').style.display = 'none';
+  document.getElementById('btn-add-receipt').style.display = 'none';
+  document.getElementById('btn-sheets').style.display = 'none';
+  document.querySelector('#lock-bar span[style]').textContent = '관리자만 수정/삭제 가능합니다.';
+  renderTable();
+}
+
+function resetFilters() {
+  document.getElementById('search-input').value = '';
+  document.getElementById('filter-billing').value = '';
+  document.getElementById('filter-matched').value = '';
+  document.getElementById('filter-service').value = '';
+  renderTable();
 }
 
 populateServiceFilter();
