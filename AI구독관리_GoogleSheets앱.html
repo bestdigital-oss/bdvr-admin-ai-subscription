@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI 구독 이력 관리 + Google Sheets 연동</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Noto Sans KR', sans-serif; background: #f8f9fa; color: #222; font-size: 14px; }
+  
+  .header { background: #1a1a2e; color: white; padding: 18px 24px; display: flex; align-items: center; justify-content: space-between; }
+  .header h1 { font-size: 18px; font-weight: 600; }
+  .header small { font-size: 12px; opacity: 0.7; }
+
+  .top-bar { background: white; border-bottom: 1px solid #e0e0e0; padding: 10px 24px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  .top-bar input, .top-bar select { padding: 7px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+  .top-bar input { width: 200px; }
+  .btn { padding: 7px 16px; border: none; border-radius: 6px; font-size: 13px; cursor: pointer; font-weight: 500; }
+  .btn-primary { background: #4285f4; color: white; }
+  .btn-success { background: #34a853; color: white; }
+  .btn-warning { background: #fbbc05; color: #333; }
+  .btn-danger { background: #ea4335; color: white; }
+  .btn-outline { background: white; border: 1px solid #ddd; color: #333; }
+  .btn:hover { opacity: 0.88; }
+
+  .summary-bar { background: white; padding: 14px 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; border-bottom: 1px solid #eee; }
+  .stat-card { background: #f8f9fa; border-radius: 8px; padding: 12px 16px; text-align: center; }
+  .stat-card .val { font-size: 20px; font-weight: 700; color: #1a1a2e; }
+  .stat-card .lbl { font-size: 11px; color: #888; margin-top: 3px; }
+
+  .content { padding: 16px 24px; }
+  
+  .tab-bar { display: flex; gap: 4px; margin-bottom: 14px; }
+  .tab { padding: 7px 16px; border-radius: 6px 6px 0 0; cursor: pointer; font-size: 13px; border: 1px solid #ddd; background: #f0f0f0; color: #666; border-bottom: none; }
+  .tab.active { background: white; color: #1a1a2e; font-weight: 600; border-bottom: 1px solid white; margin-bottom: -1px; }
+
+  .table-wrap { background: white; border: 1px solid #e0e0e0; border-radius: 0 8px 8px 8px; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th { background: #1a1a2e; color: white; padding: 9px 10px; text-align: left; font-weight: 500; white-space: nowrap; position: sticky; top: 0; }
+  td { padding: 8px 10px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+  tr:hover td { background: #f5f8ff; }
+  tr.unmatched td { background: #fff8f0; }
+  tr.unmatched:hover td { background: #fff0e0; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .badge-monthly { background: #e8f5e9; color: #2e7d32; }
+  .badge-yearly { background: #e3f2fd; color: #1565c0; }
+  .badge-credit { background: #f3e5f5; color: #6a1b9a; }
+  .badge-change { background: #fff3e0; color: #e65100; }
+  .badge-matched { background: #e8f5e9; color: #2e7d32; }
+  .badge-invoice { background: #fff8e1; color: #f57f17; }
+  .badge-receipt { background: #fce4ec; color: #880e4f; }
+
+  .cat-badge { display: inline-block; padding: 2px 7px; border-radius: 10px; font-size: 10px; border: 1px solid; }
+
+  .gs-setup { background: white; border: 1px solid #e0e0e0; border-radius: 8px; padding: 20px 24px; margin-bottom: 16px; }
+  .gs-setup h3 { font-size: 15px; margin-bottom: 12px; color: #1a1a2e; }
+  .gs-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .gs-row label { font-size: 12px; color: #666; min-width: 100px; }
+  .gs-row input { flex: 1; min-width: 200px; padding: 7px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .dot-ok { background: #34a853; }
+  .dot-err { background: #ea4335; }
+  .dot-idle { background: #aaa; }
+
+  .upload-zone { border: 2px dashed #ccc; border-radius: 8px; padding: 24px; text-align: center; cursor: pointer; background: #fafafa; margin-bottom: 14px; }
+  .upload-zone:hover { border-color: #4285f4; background: #f0f4ff; }
+  .upload-zone input { display: none; }
+
+  .log-area { background: #1e1e1e; color: #aaa; font-family: monospace; font-size: 11px; border-radius: 6px; padding: 12px; max-height: 180px; overflow-y: auto; margin-top: 12px; }
+  .log-ok { color: #69db7c; }
+  .log-err { color: #ff6b6b; }
+  .log-info { color: #74c0fc; }
+
+  .section-title { font-size: 13px; font-weight: 600; color: #444; margin: 16px 0 8px; }
+
+  @media (max-width: 768px) {
+    .header { flex-direction: column; gap: 4px; }
+    .content { padding: 10px; }
+    .summary-bar { padding: 10px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <h1>📊 AI 구독 이력 관리</h1>
+    <small>베스트디지탈 | 2023.03 ~ 현재</small>
+  </div>
+  <div style="display:flex;gap:8px;align-items:center;">
+    <span id="gs-status-indicator" class="status-dot dot-idle"></span>
+    <span id="gs-status-text" style="font-size:12px;opacity:0.8;">Google Sheets 미연결</span>
+  </div>
+</div>
+
+<div class="top-bar">
+  <input type="text" id="search-input" placeholder="🔍 서비스명 / 플랜 검색..." oninput="renderTable()">
+  <select id="filter-billing" onchange="renderTable()">
+    <option value="">전체 유형</option>
+    <option value="월간">월간</option>
+    <option value="연간">연간</option>
+    <option value="단일(크레딧)">크레딧</option>
+    <option value="단일(플랜변경)">플랜변경</option>
+  </select>
+  <select id="filter-matched" onchange="renderTable()">
+    <option value="">전체 매칭</option>
+    <option value="matched">Invoice+Receipt 매칭</option>
+    <option value="unmatched">미매칭</option>
+  </select>
+  <select id="filter-service" onchange="renderTable()">
+    <option value="">전체 서비스</option>
+  </select>
+  <button class="btn btn-outline" onclick="renderTable()">초기화</button>
+  <button class="btn btn-success" onclick="document.getElementById('tab-upload').click()">+ 영수증 추가</button>
+  <button class="btn btn-primary" onclick="showTab('sheets')">📤 Google Sheets 업데이트</button>
+</div>
+
+<div class="summary-bar" id="summary-bar"></div>
+
+<div class="content">
+
+  <div class="tab-bar">
+    <div class="tab active" onclick="showTab('history')" id="tab-history">📋 이력 관리</div>
+    <div class="tab" onclick="showTab('byservice')" id="tab-byservice">🏢 서비스별</div>
+    <div class="tab" onclick="showTab('upload')" id="tab-upload">📂 영수증 추가</div>
+    <div class="tab" onclick="showTab('sheets')" id="tab-sheets">📤 Google Sheets 연동</div>
+  </div>
+
+  <!-- 이력 관리 탭 -->
+  <div id="pane-history">
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>결제일</th>
+            <th>서비스</th>
+            <th>카테고리</th>
+            <th>플랜</th>
+            <th>유형</th>
+            <th>구독기간</th>
+            <th>금액(USD)</th>
+            <th>금액(KRW)</th>
+            <th>Invoice No</th>
+            <th>Receipt No</th>
+            <th>매칭</th>
+            <th>계정</th>
+            <th>비고</th>
+          </tr>
+        </thead>
+        <tbody id="table-body"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- 서비스별 탭 -->
+  <div id="pane-byservice" style="display:none;">
+    <div id="service-cards" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px;"></div>
+  </div>
+
+  <!-- 업로드 탭 -->
+  <div id="pane-upload" style="display:none;">
+    <div class="gs-setup">
+      <h3>📂 새 영수증 / Invoice 추가</h3>
+      <div class="upload-zone" onclick="document.getElementById('file-input').click()">
+        <input type="file" id="file-input" accept=".pdf,.zip" multiple onchange="handleUpload(event)">
+        <div style="font-size:32px;margin-bottom:8px;">📎</div>
+        <div style="font-size:14px;font-weight:600;">PDF 또는 ZIP 파일을 클릭하여 선택</div>
+        <div style="font-size:12px;color:#888;margin-top:6px;">invoice.zip / receipt.zip 또는 개별 PDF 파일</div>
+      </div>
+      <div id="upload-preview" style="display:none;">
+        <div class="section-title">감지된 파일 목록</div>
+        <div id="file-list" style="border:1px solid #eee;border-radius:6px;padding:10px;font-size:12px;"></div>
+        <div style="margin-top:10px;display:flex;gap:8px;">
+          <button class="btn btn-primary" onclick="processUpload()">🤖 AI로 파싱 &amp; 분석</button>
+          <button class="btn btn-outline" onclick="cancelUpload()">취소</button>
+        </div>
+      </div>
+      <div id="upload-result" style="display:none;margin-top:12px;"></div>
+      <div class="log-area" id="upload-log" style="display:none;"></div>
+    </div>
+
+    <div class="gs-setup">
+      <h3>📝 수동 입력</h3>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+        <div>
+          <label style="font-size:12px;color:#666;">서비스명 *</label>
+          <input type="text" id="m-service" placeholder="예: Claude Pro" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;margin-top:3px;font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:#666;">카테고리 *</label>
+          <select id="m-category" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;margin-top:3px;font-size:13px;">
+            <option>AI 챗봇/LLM</option>
+            <option>AI 이미지 생성</option>
+            <option>AI 영상생성</option>
+            <option>AI 영상생성 (아바타/TTS)</option>
+            <option>AI 음성생성(TTS)</option>
+            <option>AI 검색/에이전트</option>
+            <option>AI 프레젠테이션</option>
+            <option>AI 영상편집</option>
+            <option>AI API 크레딧</option>
+            <option>AI 크레딧</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:#666;">플랜명</label>
+          <input type="text" id="m-plan" placeholder="예: Pro monthly" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;margin-top:3px;font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:#666;">결제 유형</label>
+          <select id="m-billing" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;margin-top:3px;font-size:13px;">
+            <option>월간</option>
+            <option>연간</option>
+            <option>단일(크레딧)</option>
+            <option>단일(플랜변경)</option>
+          </select>
+        </div>
+        <div>
+          <label style="font-size:12px;color:#666;">결제일 *</label>
+          <input type="date" id="m-date" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;margin-top:3px;font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:#666;">금액 (USD)</label>
+          <input type="number" id="m-usd" placeholder="0.00" step="0.01" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;margin-top:3px;font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:#666;">금액 (KRW)</label>
+          <input type="number" id="m-krw" placeholder="0" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;margin-top:3px;font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:#666;">Invoice No</label>
+          <input type="text" id="m-inv" placeholder="예: ABC123-0001" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;margin-top:3px;font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:#666;">Receipt No</label>
+          <input type="text" id="m-rec" placeholder="예: 2704-2738-1837" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;margin-top:3px;font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:#666;">계정</label>
+          <input type="text" id="m-account" placeholder="예: motionblue@bdvr.co.kr" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;margin-top:3px;font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:#666;">구독 시작일</label>
+          <input type="date" id="m-start" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;margin-top:3px;font-size:13px;">
+        </div>
+        <div>
+          <label style="font-size:12px;color:#666;">구독 종료일</label>
+          <input type="date" id="m-end" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;margin-top:3px;font-size:13px;">
+        </div>
+        <div style="grid-column:1/-1;">
+          <label style="font-size:12px;color:#666;">비고</label>
+          <input type="text" id="m-note" placeholder="메모" style="width:100%;padding:7px;border:1px solid #ddd;border-radius:5px;margin-top:3px;font-size:13px;">
+        </div>
+      </div>
+      <div style="margin-top:12px;display:flex;gap:8px;">
+        <button class="btn btn-success" onclick="addManual()">✚ 추가</button>
+        <button class="btn btn-outline" onclick="clearManual()">지우기</button>
+      </div>
+      <div id="manual-msg" style="margin-top:8px;font-size:12px;"></div>
+    </div>
+  </div>
+
+  <!-- Google Sheets 탭 -->
+  <div id="pane-sheets" style="display:none;">
+    <div class="gs-setup">
+      <h3>🔑 Google Sheets API 설정</h3>
+      <div class="gs-row">
+        <label>Spreadsheet ID</label>
+        <input type="text" id="gs-sheet-id" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgVE2upms">
+        <button class="btn btn-outline" onclick="openSheetURL()">🔗 열기</button>
+      </div>
+      <div class="gs-row">
+        <label>API Key</label>
+        <input type="password" id="gs-api-key" placeholder="AIzaSy... (Google Cloud Console에서 발급)">
+      </div>
+      <div class="gs-row">
+        <label>시트 이름</label>
+        <input type="text" id="gs-sheet-name" value="AI구독이력" placeholder="시트 탭 이름">
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px;flex-wrap:wrap;">
+        <button class="btn btn-primary" onclick="testConnection()">🔌 연결 테스트</button>
+        <button class="btn btn-success" onclick="pushToSheets()">📤 전체 데이터 업로드</button>
+        <button class="btn btn-warning" onclick="appendLatest()">➕ 신규 항목만 추가</button>
+        <button class="btn btn-outline" onclick="pullFromSheets()">📥 Sheets에서 불러오기</button>
+      </div>
+      <div class="log-area" id="gs-log">
+        <span class="log-info">[ Google Sheets 연동 로그 ]</span>
+      </div>
+    </div>
+
+    <div class="gs-setup">
+      <h3>📋 스프레드시트 헤더 구조</h3>
+      <div style="font-size:12px;color:#555;line-height:1.9;">
+        다음 컬럼 순서로 데이터가 업로드됩니다:<br>
+        <code style="background:#f5f5f5;padding:2px 6px;border-radius:3px;">No | 결제일 | 서비스 | 카테고리 | 플랜 | 결제유형 | 구독시작 | 구독종료 | 금액USD | 금액KRW | 통화 | Invoice번호 | Receipt번호 | 매칭여부 | 계정 | AI성격 | 비고</code>
+        <br><br>
+        <strong>초기 설정 방법:</strong><br>
+        1. <a href="https://sheets.new" target="_blank" style="color:#4285f4;">sheets.new</a>에서 새 시트 생성<br>
+        2. Spreadsheet ID를 위에 입력 (URL에서 복사)<br>
+        3. Google Cloud Console에서 Sheets API 활성화 후 API Key 발급<br>
+        4. [📤 전체 데이터 업로드] 클릭으로 헤더+데이터 자동 생성<br>
+        5. 이후 영수증 추가 시 [➕ 신규 항목만 추가] 사용
+      </div>
+    </div>
+
+    <div class="gs-setup">
+      <h3>📊 CSV 내보내기 (Google Sheets 수동 업로드용)</h3>
+      <p style="font-size:12px;color:#666;margin-bottom:10px;">API 없이도 CSV로 내보내서 Google Sheets에 직접 붙여넣을 수 있습니다.</p>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-primary" onclick="exportCSV()">⬇ CSV 다운로드</button>
+        <button class="btn btn-outline" onclick="copyTSV()">📋 탭 구분 복사 (붙여넣기용)</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const CAT_COLORS = {
+  'AI 챗봇/LLM': { bg:'#e3f2fd', color:'#1565c0', border:'#90caf9' },
+  'AI 이미지 생성': { bg:'#f3e5f5', color:'#6a1b9a', border:'#ce93d8' },
+  'AI 영상생성': { bg:'#fce4ec', color:'#880e4f', border:'#f48fb1' },
+  'AI 영상생성 (아바타/TTS)': { bg:'#fce4ec', color:'#880e4f', border:'#f48fb1' },
+  'AI 음성생성(TTS)': { bg:'#e8eaf6', color:'#283593', border:'#9fa8da' },
+  'AI 검색/에이전트': { bg:'#e0f7fa', color:'#006064', border:'#80deea' },
+  'AI 프레젠테이션': { bg:'#fff8e1', color:'#f57f17', border:'#ffe082' },
+  'AI 영상편집': { bg:'#e8f5e9', color:'#1b5e20', border:'#a5d6a7' },
+  'AI API 크레딧': { bg:'#fff3e0', color:'#e65100', border:'#ffcc80' },
+  'AI 크레딧': { bg:'#fff3e0', color:'#e65100', border:'#ffcc80' },
+};
+
+const AI_NATURE = {
+  'D-ID': 'AI 아바타 영상생성, TTS 립싱크',
+  'Midjourney': 'AI 이미지 생성 (Diffusion)',
+  'OpenAI (ChatGPT Team)': 'GPT-4 기반 LLM 챗봇/팀 협업',
+  'OpenAI (ChatGPT Business)': 'GPT 기반 비즈니스 LLM',
+  'OpenAI (API Credit)': 'OpenAI API 호출용 크레딧',
+  'Anthropic (Claude Pro)': 'Claude LLM 챗봇 (Pro)',
+  'Anthropic (Claude Max 5x)': 'Claude LLM 챗봇 (Max 5x)',
+  'Anthropic (Claude Team)': 'Claude 팀 플랜',
+  'Genspark': 'AI 검색 에이전트, 웹 리서치',
+  'Perplexity': 'AI 검색 엔진/에이전트',
+  'Higgsfield': 'AI 영상생성 (Sora 경쟁사)',
+  'Beautiful.AI': 'AI 프레젠테이션 자동 생성',
+  'ElevenLabs': 'AI 음성 합성(TTS), 음성 클론',
+  'CapCut': 'AI 영상편집 (ByteDance)',
+  'CapCut (AI Credits)': 'CapCut AI 기능용 크레딧',
+};
+
+let data = [
+  { service:"D-ID", category:"AI 영상생성 (아바타/TTS)", plan:"Basic (monthly)", billing_type:"월간", date:"2023-03-20", period_start:"2023-03-20", period_end:"2023-04-20", amount_usd:49.99, amount_krw:null, currency:"USD", invoice_no:"62410B5C-0001", receipt_no:"2055-5665", matched:true, account:"motionblue@bdvr.co.kr", note:"개인계정(KIM YO SUB)" },
+  { service:"D-ID", category:"AI 영상생성 (아바타/TTS)", plan:"Pro (yearly)", billing_type:"연간", date:"2024-06-05", period_start:"2024-06-05", period_end:"2025-06-05", amount_usd:191.00, amount_krw:null, currency:"USD", invoice_no:"29702F5D-0001", receipt_no:"2024-6595", matched:true, account:"motionblue@bdvr.co.kr", note:"(주)베스트디지탈" },
+  { service:"D-ID", category:"AI 영상생성 (아바타/TTS)", plan:"Pro → 플랜변경 정산", billing_type:"단일(플랜변경)", date:"2025-03-07", period_start:"2025-03-05", period_end:"2025-06-05", amount_usd:33.27, amount_krw:null, currency:"USD", invoice_no:"29702F5D-0002", receipt_no:"2650-9923", matched:true, account:"motionblue@bdvr.co.kr", note:"Pro 플랜 변경 잔여/미사용 정산" },
+  { service:"D-ID", category:"AI 영상생성 (아바타/TTS)", plan:"Lite (monthly)", billing_type:"월간", date:"2025-10-23", period_start:"2025-10-23", period_end:"2025-11-23", amount_usd:9.40, amount_krw:null, currency:"USD", invoice_no:"YERD0MCJ-0001", receipt_no:"2931-5453", matched:true, account:"motionblue@bdvr.co.kr", note:"" },
+  { service:"D-ID", category:"AI 영상생성 (아바타/TTS)", plan:"Lite→Pro 업그레이드 정산", billing_type:"단일(플랜변경)", date:"2025-10-23", period_start:"2025-10-23", period_end:"2025-11-23", amount_usd:19.60, amount_krw:null, currency:"USD", invoice_no:"YERD0MCJ-0002", receipt_no:"2539-8491", matched:true, account:"motionblue@bdvr.co.kr", note:"Lite→Pro 업그레이드 잔여/미사용 정산" },
+  { service:"Midjourney", category:"AI 이미지 생성", plan:"Basic (monthly)", billing_type:"월간", date:"2023-03-19", period_start:"2023-03-19", period_end:"2023-04-19", amount_usd:10.00, amount_krw:null, currency:"USD", invoice_no:"0A9DA5B7-0001", receipt_no:"2253-6787", matched:true, account:"motionblue@outlook.kr", note:"개인계정(KIM YO SUB)" },
+  { service:"Midjourney", category:"AI 이미지 생성", plan:"Basic (yearly) + 플랜변경정산", billing_type:"연간", date:"2023-04-06", period_start:"2023-04-06", period_end:"2024-04-06", amount_usd:92.97, amount_krw:null, currency:"USD", invoice_no:"0A9DA5B7-0002", receipt_no:"2892-6723", matched:true, account:"motionblue@outlook.kr", note:"연간전환, 미사용시간 공제(-$3.03)" },
+  { service:"Midjourney", category:"AI 이미지 생성", plan:"Basic (monthly)", billing_type:"월간", date:"2026-03-13", period_start:"2026-03-13", period_end:"2026-04-13", amount_usd:11.00, amount_krw:null, currency:"USD", invoice_no:"CHICCLN9-0002", receipt_no:"2414-3447-5261", matched:true, account:"yungu.choi@gmail.com", note:"VAT 포함 $11 (최윤구)" },
+  { service:"OpenAI (ChatGPT Team)", category:"AI 챗봇/LLM", plan:"Team (2 seats, yearly)", billing_type:"연간", date:"2024-03-10", period_start:"2024-03-10", period_end:"2025-03-10", amount_usd:660.00, amount_krw:null, currency:"USD", invoice_no:"F3974D53-0001", receipt_no:"2384-4292", matched:true, account:"motionblue@bdvr.co.kr", note:"2석×$300 + VAT 10% ($60)" },
+  { service:"OpenAI (ChatGPT Team)", category:"AI 챗봇/LLM", plan:"Team (2 seats, yearly)", billing_type:"연간", date:"2025-03-10", period_start:"2025-03-10", period_end:"2026-03-10", amount_usd:660.00, amount_krw:null, currency:"USD", invoice_no:"F3974D53-0002", receipt_no:"2150-1539", matched:true, account:"motionblue@bdvr.co.kr", note:"2석×$300 + VAT 10% ($60)" },
+  { service:"OpenAI (ChatGPT Business)", category:"AI 챗봇/LLM", plan:"Business (2 seats, yearly)", billing_type:"연간", date:"2026-03-10", period_start:"2026-03-10", period_end:"2027-03-10", amount_usd:660.00, amount_krw:null, currency:"USD", invoice_no:"F3974D53-0003", receipt_no:"2560-6130-2168", matched:true, account:"motionblue@bdvr.co.kr", note:"플랜명 Team→Business로 변경, 2석×$300 + VAT 10%" },
+  { service:"OpenAI (API Credit)", category:"AI API 크레딧", plan:"API 크레딧 충전", billing_type:"단일(크레딧)", date:"2025-09-12", period_start:"2025-09-12", period_end:null, amount_usd:20.00, amount_krw:null, currency:"USD", invoice_no:"7E629419-0001", receipt_no:"2669-7748", matched:true, account:"motionblue@bdvr.co.kr", note:"OpenAI API usage credit" },
+  { service:"Anthropic (Claude Pro)", category:"AI 챗봇/LLM", plan:"Claude Pro (monthly, 50% 할인)", billing_type:"월간", date:"2026-01-12", period_start:"2026-01-12", period_end:"2026-02-12", amount_usd:11.00, amount_krw:null, currency:"USD", invoice_no:"MNY8QYA7-0001", receipt_no:null, matched:false, account:"yungu.choi@gmail.com", note:"3개월 50% 할인 적용, VAT 포함 $11 / Receipt 없음" },
+  { service:"Anthropic (Claude Max 5x)", category:"AI 챗봇/LLM", plan:"Max plan - 5x (monthly)", billing_type:"월간", date:"2026-02-11", period_start:"2026-02-11", period_end:"2026-03-11", amount_usd:99.61, amount_krw:null, currency:"USD", invoice_no:"MNY8QYA7-0002", receipt_no:"2343-7543-0059", matched:true, account:"yungu.choi@gmail.com", note:"Claude Pro→Max 업그레이드 정산 포함" },
+  { service:"Anthropic (Claude Pro)", category:"AI 챗봇/LLM", plan:"Claude Pro (monthly)", billing_type:"월간", date:"2026-03-12", period_start:"2026-03-12", period_end:"2026-04-12", amount_usd:20.00, amount_krw:null, currency:"USD", invoice_no:"J63XSYWY-0002", receipt_no:"2704-2738-1837", matched:true, account:"bestdigital111@gmail.com", note:"" },
+  { service:"Anthropic (Claude Team)", category:"AI 챗봇/LLM", plan:"Team plan - Standard (5→6석)", billing_type:"단일(플랜변경)", date:"2026-03-17", period_start:"2026-03-17", period_end:"2026-04-16", amount_usd:24.92, amount_krw:null, currency:"USD", invoice_no:"SKHHJYXJ-0002", receipt_no:null, matched:false, account:"webcon@bdvr.co.kr", note:"5→6석 업그레이드 정산 / Receipt 없음" },
+  { service:"Anthropic (Claude Team)", category:"AI 챗봇/LLM", plan:"Team plan - Standard (6→8석)", billing_type:"단일(플랜변경)", date:"2026-03-20", period_start:"2026-03-20", period_end:"2026-04-16", amount_usd:44.97, amount_krw:null, currency:"USD", invoice_no:"SKHHJYXJ-0003", receipt_no:null, matched:false, account:"webcon@bdvr.co.kr", note:"6→8석 업그레이드 정산 / Receipt 없음" },
+  { service:"Genspark", category:"AI 검색/에이전트", plan:"Plus (monthly)", billing_type:"월간", date:"2025-09-16", period_start:"2025-09-16", period_end:"2025-10-16", amount_usd:24.99, amount_krw:null, currency:"USD", invoice_no:"WNOBWJ3Z-0002", receipt_no:"2725-7975", matched:true, account:"motionblue@bdvr.co.kr", note:"" },
+  { service:"Genspark", category:"AI 검색/에이전트", plan:"Plus (monthly)", billing_type:"월간", date:"2025-10-16", period_start:"2025-10-16", period_end:"2025-11-16", amount_usd:24.99, amount_krw:null, currency:"USD", invoice_no:"WNOBWJ3Z-0003", receipt_no:"2677-0953", matched:true, account:"motionblue@bdvr.co.kr", note:"" },
+  { service:"Genspark", category:"AI API 크레딧", plan:"Credits Pack 1", billing_type:"단일(크레딧)", date:"2025-10-16", period_start:"2025-10-16", period_end:null, amount_usd:20.00, amount_krw:null, currency:"USD", invoice_no:"WNOBWJ3Z-0004", receipt_no:"2212-4472", matched:true, account:"motionblue@bdvr.co.kr", note:"" },
+  { service:"Genspark", category:"AI 검색/에이전트", plan:"Plus (yearly, 41.67%할인)", billing_type:"연간", date:"2026-01-05", period_start:"2026-01-05", period_end:"2027-01-05", amount_usd:139.99, amount_krw:null, currency:"USD", invoice_no:"WNOBWJ3Z-0005", receipt_no:"2579-3805", matched:true, account:"motionblue@bdvr.co.kr", note:"원가$239.99, 쿠폰 happynewyear1000 적용" },
+  { service:"Genspark", category:"AI API 크레딧", plan:"Credits Pack 1", billing_type:"단일(크레딧)", date:"2026-01-19", period_start:"2026-01-19", period_end:null, amount_usd:20.00, amount_krw:null, currency:"USD", invoice_no:"WNOBWJ3Z-0006", receipt_no:"2553-7972", matched:true, account:"motionblue@bdvr.co.kr", note:"" },
+  { service:"Genspark", category:"AI API 크레딧", plan:"Credits Pack 1", billing_type:"단일(크레딧)", date:"2026-03-01", period_start:"2026-03-01", period_end:null, amount_usd:20.00, amount_krw:null, currency:"USD", invoice_no:"WNOBWJ3Z-0007", receipt_no:"2369-0947", matched:true, account:"motionblue@bdvr.co.kr", note:"" },
+  { service:"Genspark", category:"AI 검색/에이전트", plan:"Plus Yearly → 업그레이드 정산", billing_type:"단일(플랜변경)", date:"2026-03-18", period_start:"2026-03-18", period_end:"2027-01-05", amount_usd:273.66, amount_krw:null, currency:"USD", invoice_no:"WNOBWJ3Z-0008", receipt_no:"2224-6278", matched:true, account:"motionblue@bdvr.co.kr", note:"연간구독 업그레이드 잔여/미사용 정산" },
+  { service:"Perplexity", category:"AI 검색/에이전트", plan:"Pro (yearly)", billing_type:"연간", date:"2026-02-23", period_start:"2026-02-23", period_end:"2027-02-23", amount_usd:200.00, amount_krw:null, currency:"USD", invoice_no:"32YPM2XO-0001", receipt_no:"2129-2364", matched:true, account:"webcon@bdvr.co.kr", note:"세금 0% (역과세)" },
+  { service:"Higgsfield", category:"AI 영상생성", plan:"Creator Last Chance (monthly, 65%할인)", billing_type:"월간", date:"2026-02-12", period_start:"2026-02-12", period_end:"2026-03-12", amount_usd:89.00, amount_krw:null, currency:"USD", invoice_no:"DXUE2RAY-0001", receipt_no:"2701-9351", matched:true, account:"bestdigital111@gmail.com", note:"원가$150, 프로모 할인 -$61" },
+  { service:"Higgsfield", category:"AI 영상생성", plan:"Ultimate (monthly)", billing_type:"월간", date:"2026-03-13", period_start:"2026-03-13", period_end:"2026-04-13", amount_usd:53.90, amount_krw:null, currency:"USD", invoice_no:"DXUE2RAY-0002", receipt_no:"2820-5629", matched:true, account:"bestdigital111@gmail.com", note:"VAT 포함 $53.90 ($49+$4.90)" },
+  { service:"Beautiful.AI", category:"AI 프레젠테이션", plan:"Pro (monthly)", billing_type:"월간", date:"2026-03-18", period_start:"2026-03-18", period_end:"2026-04-18", amount_usd:45.00, amount_krw:null, currency:"USD", invoice_no:"TMDW89AH-0002", receipt_no:"2839-4496", matched:true, account:"bestdigital111@gmail.com", note:"" },
+  { service:"ElevenLabs", category:"AI 음성생성(TTS)", plan:"Starter (monthly)", billing_type:"월간", date:"2026-03-27", period_start:"2026-03-27", period_end:null, amount_usd:5.00, amount_krw:null, currency:"USD", invoice_no:"K7JOJYA1-0001", receipt_no:"2140-4219-9767", matched:true, account:"bestdigital111@gmail.com", note:"" },
+  { service:"CapCut", category:"AI 영상편집", plan:"Pro (monthly)", billing_type:"월간", date:"2025-10-22", period_start:"2025-10-22", period_end:null, amount_usd:null, amount_krw:19800, currency:"KRW", invoice_no:"CC2025I200034110", receipt_no:"CC2025R200463346", matched:true, account:"최윤구", note:"VAT 포함 19,800원" },
+  { service:"CapCut (AI Credits)", category:"AI 크레딧", plan:"ai.credits 200크레딧", billing_type:"단일(크레딧)", date:"2026-03-23", period_start:"2026-03-23", period_end:null, amount_usd:null, amount_krw:2000, currency:"KRW", invoice_no:null, receipt_no:"CC2026R202005032", matched:false, account:"user5072345169209", note:"영수증만 있음, Invoice 없음" },
+  { service:"CapCut (AI Credits)", category:"AI 크레딧", plan:"ai.credits 990크레딧", billing_type:"단일(크레딧)", date:"2026-03-23", period_start:"2026-03-23", period_end:null, amount_usd:null, amount_krw:9900, currency:"KRW", invoice_no:null, receipt_no:"CC2026R202004335", matched:false, account:"user5072345169209", note:"영수증만 있음, Invoice 없음" },
+];
+
+function billingBadge(t) {
+  const m = { '월간':'badge-monthly', '연간':'badge-yearly', '단일(크레딧)':'badge-credit', '단일(플랜변경)':'badge-change' };
+  return `<span class="badge ${m[t]||'badge-monthly'}">${t}</span>`;
+}
+
+function catBadge(cat) {
+  const c = CAT_COLORS[cat] || { bg:'#eee', color:'#333', border:'#ccc' };
+  return `<span class="cat-badge" style="background:${c.bg};color:${c.color};border-color:${c.border};">${cat}</span>`;
+}
+
+function matchBadge(m, inv, rec) {
+  if (m) return `<span class="badge badge-matched">✓ 매칭</span>`;
+  if (inv && !rec) return `<span class="badge badge-invoice">Invoice만</span>`;
+  if (!inv && rec) return `<span class="badge badge-receipt">Receipt만</span>`;
+  return `<span class="badge" style="background:#eee;color:#999;">없음</span>`;
+}
+
+function fmtAmt(usd, krw, cur) {
+  if (cur==='KRW') return '';
+  return usd ? `$${usd.toFixed(2)}` : '-';
+}
+function fmtKrw(usd, krw, cur) {
+  if (cur==='KRW') return `₩${(krw||0).toLocaleString()}`;
+  return '';
+}
+
+function getFiltered() {
+  const q = document.getElementById('search-input').value.toLowerCase();
+  const bt = document.getElementById('filter-billing').value;
+  const mt = document.getElementById('filter-matched').value;
+  const sv = document.getElementById('filter-service').value;
+  return data.filter(r => {
+    if (q && !r.service.toLowerCase().includes(q) && !r.plan.toLowerCase().includes(q)) return false;
+    if (bt && r.billing_type !== bt) return false;
+    if (mt === 'matched' && !r.matched) return false;
+    if (mt === 'unmatched' && r.matched) return false;
+    if (sv && r.service !== sv) return false;
+    return true;
+  }).sort((a,b) => a.date.localeCompare(b.date));
+}
+
+function renderTable() {
+  const rows = getFiltered();
+  const tb = document.getElementById('table-body');
+  tb.innerHTML = rows.map((r,i) => `
+    <tr class="${r.matched?'':'unmatched'}">
+      <td>${i+1}</td>
+      <td>${r.date}</td>
+      <td><strong>${r.service}</strong></td>
+      <td>${catBadge(r.category)}</td>
+      <td style="max-width:180px;font-size:12px;">${r.plan}</td>
+      <td>${billingBadge(r.billing_type)}</td>
+      <td style="font-size:11px;color:#666;">${r.period_start||''} ~ ${r.period_end||'진행중'}</td>
+      <td style="font-weight:600;color:#1565c0;">${fmtAmt(r.amount_usd,r.amount_krw,r.currency)}</td>
+      <td style="font-weight:600;color:#e65100;">${fmtKrw(r.amount_usd,r.amount_krw,r.currency)}</td>
+      <td style="font-size:11px;color:#888;">${r.invoice_no||'-'}</td>
+      <td style="font-size:11px;color:#888;">${r.receipt_no||'-'}</td>
+      <td>${matchBadge(r.matched,r.invoice_no,r.receipt_no)}</td>
+      <td style="font-size:11px;color:#666;">${r.account||''}</td>
+      <td style="font-size:11px;color:#666;max-width:160px;">${r.note||''}</td>
+    </tr>`).join('');
+  renderSummary();
+}
+
+function renderSummary() {
+  const rows = getFiltered();
+  const totalUSD = rows.reduce((s,r)=>s+(r.amount_usd||0),0);
+  const totalKRW = rows.reduce((s,r)=>s+(r.amount_krw||0),0);
+  const matched = rows.filter(r=>r.matched).length;
+  const unmatched = rows.filter(r=>!r.matched).length;
+  const monthly = rows.filter(r=>r.billing_type==='월간').length;
+  const yearly = rows.filter(r=>r.billing_type==='연간').length;
+  document.getElementById('summary-bar').innerHTML = `
+    <div class="stat-card"><div class="val">${rows.length}</div><div class="lbl">총 결제 건수</div></div>
+    <div class="stat-card"><div class="val" style="color:#1565c0;">$${totalUSD.toFixed(2)}</div><div class="lbl">USD 합계</div></div>
+    <div class="stat-card"><div class="val" style="color:#e65100;">₩${totalKRW.toLocaleString()}</div><div class="lbl">KRW 합계</div></div>
+    <div class="stat-card"><div class="val" style="color:#2e7d32;">${matched}</div><div class="lbl">Invoice+Receipt 매칭</div></div>
+    <div class="stat-card"><div class="val" style="color:#d32f2f;">${unmatched}</div><div class="lbl">미매칭 항목</div></div>
+    <div class="stat-card"><div class="val">${monthly}</div><div class="lbl">월간 구독</div></div>
+    <div class="stat-card"><div class="val">${yearly}</div><div class="lbl">연간 구독</div></div>
+  `;
+}
+
+function renderServiceCards() {
+  const services = [...new Set(data.map(r=>r.service))];
+  const cards = services.map(sv => {
+    const items = data.filter(r=>r.service===sv).sort((a,b)=>a.date.localeCompare(b.date));
+    const totalUSD = items.reduce((s,r)=>s+(r.amount_usd||0),0);
+    const totalKRW = items.reduce((s,r)=>s+(r.amount_krw||0),0);
+    const latest = items[items.length-1];
+    const c = CAT_COLORS[latest.category]||{bg:'#eee',color:'#333',border:'#ccc'};
+    const nature = AI_NATURE[sv]||latest.category;
+    return `<div style="background:white;border:1px solid #e0e0e0;border-radius:10px;padding:14px 16px;border-top:3px solid ${c.border};">
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px;">${sv}</div>
+      <div style="font-size:11px;color:${c.color};background:${c.bg};border-radius:10px;padding:2px 8px;display:inline-block;margin-bottom:8px;">${nature}</div>
+      <div style="font-size:12px;color:#555;margin-bottom:8px;">${latest.category}</div>
+      <div style="display:flex;justify-content:space-between;font-size:12px;">
+        <span>결제 ${items.length}건</span>
+        <span style="font-weight:600;color:#1565c0;">${totalUSD>0?'$'+totalUSD.toFixed(2):''}${totalKRW>0?' ₩'+totalKRW.toLocaleString():''}</span>
+      </div>
+      <div style="margin-top:8px;font-size:11px;color:#888;">
+        ${items.map(r=>`<div style="display:flex;justify-content:space-between;padding:2px 0;border-bottom:1px dashed #f0f0f0;">
+          <span>${r.date} · ${r.billing_type}</span>
+          <span>${r.amount_usd?'$'+r.amount_usd.toFixed(2):r.amount_krw?'₩'+r.amount_krw.toLocaleString():''}</span>
+        </div>`).join('')}
+      </div>
+    </div>`;
+  });
+  document.getElementById('service-cards').innerHTML = cards.join('');
+}
+
+function populateServiceFilter() {
+  const sv = [...new Set(data.map(r=>r.service))].sort();
+  const sel = document.getElementById('filter-service');
+  sel.innerHTML = '<option value="">전체 서비스</option>' + sv.map(s=>`<option value="${s}">${s}</option>`).join('');
+}
+
+function showTab(name) {
+  ['history','byservice','upload','sheets'].forEach(t=>{
+    document.getElementById('pane-'+t).style.display='none';
+    document.getElementById('tab-'+t).classList.remove('active');
+  });
+  document.getElementById('pane-'+name).style.display='';
+  document.getElementById('tab-'+name).classList.add('active');
+  if (name==='byservice') renderServiceCards();
+}
+
+function addManual() {
+  const service = document.getElementById('m-service').value.trim();
+  const date = document.getElementById('m-date').value;
+  if (!service || !date) { document.getElementById('manual-msg').innerHTML='<span style="color:red;">서비스명과 결제일은 필수입니다.</span>'; return; }
+  const inv = document.getElementById('m-inv').value.trim()||null;
+  const rec = document.getElementById('m-rec').value.trim()||null;
+  data.push({
+    service, category:document.getElementById('m-category').value,
+    plan:document.getElementById('m-plan').value, billing_type:document.getElementById('m-billing').value,
+    date, period_start:document.getElementById('m-start').value||date,
+    period_end:document.getElementById('m-end').value||null,
+    amount_usd:parseFloat(document.getElementById('m-usd').value)||null,
+    amount_krw:parseFloat(document.getElementById('m-krw').value)||null,
+    currency:document.getElementById('m-krw').value?'KRW':'USD',
+    invoice_no:inv, receipt_no:rec,
+    matched: !!(inv && rec),
+    account:document.getElementById('m-account').value,
+    note:document.getElementById('m-note').value
+  });
+  populateServiceFilter(); renderTable();
+  document.getElementById('manual-msg').innerHTML='<span style="color:green;">✓ 추가되었습니다.</span>';
+  setTimeout(()=>document.getElementById('manual-msg').innerHTML='',2000);
+}
+
+function clearManual() {
+  ['m-service','m-plan','m-date','m-usd','m-krw','m-inv','m-rec','m-account','m-start','m-end','m-note'].forEach(id=>{ document.getElementById(id).value=''; });
+}
+
+let uploadedFiles = [];
+function handleUpload(evt) {
+  uploadedFiles = Array.from(evt.target.files);
+  if (!uploadedFiles.length) return;
+  document.getElementById('upload-preview').style.display='';
+  document.getElementById('file-list').innerHTML = uploadedFiles.map(f=>`<div>📄 ${f.name} (${(f.size/1024).toFixed(1)}KB)</div>`).join('');
+}
+function cancelUpload() { uploadedFiles=[]; document.getElementById('upload-preview').style.display='none'; }
+function processUpload() {
+  const log = document.getElementById('upload-log');
+  log.style.display=''; log.innerHTML='';
+  addLog(log,'info','파일 업로드 처리 시작...');
+  uploadedFiles.forEach(f=>addLog(log,'ok',`${f.name} 감지됨`));
+  addLog(log,'info','실제 PDF 파싱 기능은 서버사이드 또는 Claude API 연동 필요');
+  addLog(log,'info','수동 입력 탭에서 파싱된 데이터를 직접 입력해 주세요.');
+  document.getElementById('upload-result').style.display='';
+  document.getElementById('upload-result').innerHTML='<div style="background:#fff8e1;border:1px solid #ffe082;border-radius:6px;padding:10px;font-size:12px;color:#795548;">⚠ 브라우저 환경에서는 PDF 자동 파싱이 제한됩니다. 새 파일은 <strong>수동 입력</strong> 탭을 통해 추가하거나, Claude와의 대화에서 영수증 PDF를 공유하여 파싱 후 데이터를 붙여넣으세요.</div>';
+}
+
+function addLog(el, type, msg) {
+  el.innerHTML += `<div class="log-${type}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function gsLog(msg, type='info') {
+  const el = document.getElementById('gs-log');
+  el.innerHTML += `<div class="log-${type}">[${new Date().toLocaleTimeString()}] ${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function getSheetId() { return document.getElementById('gs-sheet-id').value.trim(); }
+function getApiKey() { return document.getElementById('gs-api-key').value.trim(); }
+function getSheetName() { return document.getElementById('gs-sheet-name').value.trim()||'AI구독이력'; }
+
+function updateStatusIndicator(status) {
+  const dot = document.getElementById('gs-status-indicator');
+  const txt = document.getElementById('gs-status-text');
+  if (status==='ok') { dot.className='status-dot dot-ok'; txt.textContent='Google Sheets 연결됨'; }
+  else if (status==='err') { dot.className='status-dot dot-err'; txt.textContent='연결 오류'; }
+  else { dot.className='status-dot dot-idle'; txt.textContent='Google Sheets 미연결'; }
+}
+
+async function testConnection() {
+  const sheetId = getSheetId(); const apiKey = getApiKey();
+  if (!sheetId||!apiKey) { gsLog('Spreadsheet ID와 API Key를 입력해 주세요.','err'); return; }
+  gsLog('연결 테스트 중...');
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}?key=${apiKey}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if (json.error) { gsLog(`오류: ${json.error.message}`,'err'); updateStatusIndicator('err'); return; }
+    gsLog(`✓ 연결 성공! 시트 이름: "${json.title}"`, 'ok');
+    updateStatusIndicator('ok');
+  } catch(e) { gsLog(`연결 실패: ${e.message}`,'err'); updateStatusIndicator('err'); }
+}
+
+function buildRows(includeHeader) {
+  const header = ['No','결제일','서비스','카테고리','플랜','결제유형','구독시작','구독종료','금액USD','금액KRW','통화','Invoice번호','Receipt번호','매칭여부','계정','AI성격','비고'];
+  const rows = data.map((r,i)=>[
+    i+1, r.date, r.service, r.category, r.plan, r.billing_type,
+    r.period_start||'', r.period_end||'', r.amount_usd||'', r.amount_krw||'', r.currency,
+    r.invoice_no||'', r.receipt_no||'', r.matched?'매칭':'미매칭', r.account||'',
+    AI_NATURE[r.service]||r.category, r.note||''
+  ]);
+  return includeHeader ? [header, ...rows] : rows;
+}
+
+async function pushToSheets() {
+  const sheetId = getSheetId(); const apiKey = getApiKey(); const sheetName = getSheetName();
+  if (!sheetId||!apiKey) { gsLog('Spreadsheet ID와 API Key를 입력해 주세요.','err'); return; }
+  gsLog('전체 데이터 업로드 중...');
+  const values = buildRows(true);
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetName+'!A1')}?valueInputOption=RAW&key=${apiKey}`;
+    const res = await fetch(url, {
+      method:'PUT', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ range:`${sheetName}!A1`, majorDimension:'ROWS', values })
+    });
+    const json = await res.json();
+    if (json.error) { gsLog(`오류: ${json.error.message}`,'err'); return; }
+    gsLog(`✓ 업로드 완료! ${values.length-1}건 (헤더 포함 ${values.length}행)`,'ok');
+  } catch(e) { gsLog(`업로드 실패: ${e.message}`,'err'); }
+}
+
+async function appendLatest() {
+  const sheetId = getSheetId(); const apiKey = getApiKey(); const sheetName = getSheetName();
+  if (!sheetId||!apiKey) { gsLog('Spreadsheet ID와 API Key를 입력해 주세요.','err'); return; }
+  gsLog('신규 항목 추가 모드...');
+  try {
+    const getUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetName+'!A:A')}?key=${apiKey}`;
+    const getRes = await fetch(getUrl);
+    const getJson = await getRes.json();
+    const existingRows = (getJson.values||[]).length;
+    const allRows = buildRows(false);
+    const newRows = allRows.slice(existingRows-1);
+    if (newRows.length===0) { gsLog('추가할 신규 항목 없음','info'); return; }
+    const appendUrl = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetName+'!A1')}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS&key=${apiKey}`;
+    const res = await fetch(appendUrl, {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({ range:`${sheetName}!A1`, majorDimension:'ROWS', values:newRows })
+    });
+    const json = await res.json();
+    if (json.error) { gsLog(`오류: ${json.error.message}`,'err'); return; }
+    gsLog(`✓ ${newRows.length}건 추가 완료!`,'ok');
+  } catch(e) { gsLog(`추가 실패: ${e.message}`,'err'); }
+}
+
+async function pullFromSheets() {
+  const sheetId = getSheetId(); const apiKey = getApiKey(); const sheetName = getSheetName();
+  if (!sheetId||!apiKey) { gsLog('Spreadsheet ID와 API Key를 입력해 주세요.','err'); return; }
+  gsLog('Sheets에서 데이터 불러오는 중...');
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/${encodeURIComponent(sheetName+'!A2:Q')}?key=${apiKey}`;
+    const res = await fetch(url);
+    const json = await res.json();
+    if (json.error) { gsLog(`오류: ${json.error.message}`,'err'); return; }
+    const rows = json.values||[];
+    gsLog(`${rows.length}건 불러옴 (화면 데이터는 변경되지 않음, 확인용)`,'ok');
+    rows.slice(0,3).forEach(r=>gsLog(`  예시: ${r.slice(0,5).join(' | ')}`,'info'));
+  } catch(e) { gsLog(`실패: ${e.message}`,'err'); }
+}
+
+function openSheetURL() {
+  const id = getSheetId();
+  if (id) window.open(`https://docs.google.com/spreadsheets/d/${id}`, '_blank');
+}
+
+function exportCSV() {
+  const rows = buildRows(true);
+  const csv = rows.map(r=>r.map(v=>`"${String(v).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const blob = new Blob(['\uFEFF'+csv], {type:'text/csv;charset=utf-8;'});
+  const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
+  a.download=`AI구독이력_${new Date().toISOString().slice(0,10)}.csv`; a.click();
+}
+
+function copyTSV() {
+  const rows = buildRows(true);
+  const tsv = rows.map(r=>r.join('\t')).join('\n');
+  navigator.clipboard.writeText(tsv).then(()=>alert('클립보드에 복사되었습니다!\n\nGoogle Sheets의 셀 A1을 클릭한 후 Ctrl+V로 붙여넣으세요.'));
+}
+
+populateServiceFilter();
+renderTable();
+</script>
+</body>
+</html>
